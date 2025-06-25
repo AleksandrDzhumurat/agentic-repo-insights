@@ -6,17 +6,11 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from langchain.docstore.document import Document
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from pydantic import BaseModel
 
-from vectoriser import (
-    chunk_documents,
-    create_vector_database,
-    get_data_dir,
-    get_raw_knowledge_base,
-)
+from vectoriser import VECTOR_INDEX_DIR_NAME, get_data_dir, get_latest_file
 
 
 class QueryRequest(BaseModel):
@@ -39,14 +33,6 @@ class AppState:
 
 app_state = AppState()
 
-
-def save_vector_db(vector_db: FAISS, path: str):
-    """Save vector database to disk"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    vector_db.save_local(path)
-    print(f"Vector database saved to: {path}")
-
-
 def load_vector_db(path: str) -> Optional[FAISS]:
     """Load vector database from disk"""
     try:
@@ -55,9 +41,8 @@ def load_vector_db(path: str) -> Optional[FAISS]:
             model_name="thenlper/gte-small", 
             cache_folder=cache_folder
         )
-        # Store embedding model in app state
         app_state.embedding_model = embedding_model
-        
+        print(f'Loading FAISS index from {path}')
         vector_db = FAISS.load_local(path, embedding_model, allow_dangerous_deserialization=True)
         print(f"Vector database loaded from: {path}")
         return vector_db
@@ -65,11 +50,11 @@ def load_vector_db(path: str) -> Optional[FAISS]:
         print(f"Failed to load vector database: {e}")
         return None
 
-
 async def startup_event():
     print("Starting up application...")
     load_dotenv()
-    vector_db_path = get_data_dir('faiss_index')
+    latest_index = get_latest_file(get_data_dir(VECTOR_INDEX_DIR_NAME)) # 'e66ffe2a423c76906f1fc18c49f260df'
+    vector_db_path = os.path.join(get_data_dir(VECTOR_INDEX_DIR_NAME), latest_index)
     app_state.vector_db = load_vector_db(vector_db_path)
     
     if app_state.vector_db is not None:
@@ -114,36 +99,6 @@ async def root():
         "status": "running",
         "initialized": app_state.is_initialized
     }
-
-@app.get("/build", response_model=dict)
-async def build_knowledge_base():
-    """Build or rebuild the knowledge base from input directory"""
-    
-    vector_db_path = get_data_dir('faiss_index')
-    try:
-        # Build knowledge base
-        knowledge_base = get_raw_knowledge_base(os.environ['DOCS_DIR'])
-        documents = [
-            Document(
-                page_content=doc["text"], 
-                metadata={"source": doc["source"]}
-            ) for doc in knowledge_base
-        ]
-        chunked_docs = chunk_documents(documents)
-        app_state.vector_db = create_vector_database(chunked_docs)
-        save_vector_db(app_state.vector_db, vector_db_path)
-        app_state.is_initialized = True
-        return {
-            "message": "Knowledge base built successfully",
-            "status": "success",
-            "stats": {
-                "raw_files": len(knowledge_base),
-                "documents": len(documents),
-                "chunks": len(chunked_docs)
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to build knowledge base: {str(e)}")
 
 @app.get("/status")
 async def get_status():

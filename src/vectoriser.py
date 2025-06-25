@@ -13,10 +13,6 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 
-def get_data_dir(folder_name):
-    root_dir = os.environ['ROOT_DATA_DIR']
-    return os.path.join(root_dir, folder_name)
-
 class RetrieverTool(Tool):
     name = "retriever"
     description = "Using semantic similarity, retrieves some documents from the knowledge base that have the closest embeddings to the input query."
@@ -48,6 +44,7 @@ class RetrieverTool(Tool):
 
 print('Load dotenv', load_dotenv())
 ANTHROPIC_TOKEN = os.environ['ANTHROPIC_API_KEY']
+VECTOR_INDEX_DIR_NAME = 'faiss_index'
 
 # @dataclass
 # class Document:
@@ -91,15 +88,40 @@ ANTHROPIC_TOKEN = os.environ['ANTHROPIC_API_KEY']
 # Usage example
 # text_splitter = SimpleLineSplitter(lines_per_chunk=20)
 
-tokenizer_name = "thenlper/gte-small"
-tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_folder=get_data_dir('models'))
+tokenizer = None
 
-def get_text_splitter():
+
+
+def get_data_dir(folder_name):
+    root_dir = os.environ['ROOT_DATA_DIR']
+    return os.path.join(root_dir, folder_name)
+
+def get_latest_file(data_dir, file_name_pattern=''):
+    files = [i for i in os.listdir(data_dir) if file_name_pattern in i]
+    sorted_files = list(sorted(files, key=lambda x: os.path.getctime(os.path.join(data_dir, x))))
+    if len(sorted_files) > 0:
+        return sorted_files[0]
+
+def save_vector_db(vector_db: FAISS, path: str):
+    """Save vector database to disk"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    vector_db.save_local(path)
+    print(f"Vector database saved to: {path}")
+
+def get_tokenizer(models_dir):
+    global tokenizer
+
+    if tokenizer is None:
+        tokenizer_name = "thenlper/gte-small"
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_folder=models_dir)
+    return tokenizer
+
+def get_text_splitter(models_dir):
     chunk_size = 200
     chunk_overlap = 20
 
     text_splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
-        tokenizer,
+        tokenizer=get_tokenizer(models_dir),
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         add_start_index=True,
@@ -108,10 +130,10 @@ def get_text_splitter():
     )
     return text_splitter
 
-def chunk_documents(documents: List[Document]) -> List[Document]:
+def chunk_documents(documents: List[Document], models_dir) -> List[Document]:
     """Split documents into chunks and remove duplicates"""
     print("Splitting documents...")
-    text_splitter = get_text_splitter()
+    text_splitter = get_text_splitter(models_dir)
     docs_processed = []
     unique_texts: Set[str] = set()
     
@@ -129,7 +151,7 @@ def get_raw_knowledge_base(root_dir):
     file_paths = []
     for root, dirs, files in os.walk(root_dir):
         for file in files:
-            skip_extensions = ('.jpg', '.ico', '.css', '.png', '.pack', '.idx', 'ttf', 'eot', 'woff', 'rev')
+            skip_extensions = ('.svg', '.jpg', '.ico', '.css', '.png', '.pack', '.idx', 'ttf', 'eot', 'woff', 'rev')
             for file in files:
                 if not (
                     file.endswith(skip_extensions) or file.startswith('.') or '.' not in file
@@ -151,14 +173,12 @@ def get_raw_knowledge_base(root_dir):
                 print('>>>', file_path)
     return knowledge_base
 
-
-def create_vector_database(docs_processed: List[Document]) -> FAISS:
+def create_vector_database(docs_processed: List[Document], models_dir: str) -> FAISS:
     """Create a vector database from processed documents"""
     print("Embedding documents... This may take a few minutes")
 
-    cache_folder = get_data_dir('models')
     embedding_model_name="thenlper/gte-small"
-    embedding_model = HuggingFaceEmbeddings(model_name=embedding_model_name, cache_folder=cache_folder)
+    embedding_model = HuggingFaceEmbeddings(model_name=embedding_model_name, cache_folder=models_dir)
     return FAISS.from_documents(
         documents=docs_processed,
         embedding=embedding_model,
@@ -171,7 +191,6 @@ if __name__  == '__main__':
     
     parser.add_argument('--input', '-i', required=True, help='Input dir')
     args = parser.parse_args()
-
 
     knowledge_base = get_raw_knowledge_base(args.input)
     documents = [
