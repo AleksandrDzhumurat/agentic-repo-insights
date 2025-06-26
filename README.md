@@ -13,10 +13,10 @@ uv init rnd-python
 uv venv  --python 3.12 &&
 source .venv/bin/activate 
 
-cd rnd-python
-uv pip install -r ../requirements.txt && \
-uv pip freeze > temp_requirements.txt && \
-uv add $(cat temp_requirements.txt | tr '\n' ' ')
+cd rnd-python & \
+uv pip install -r ../requirements.txt \
+uv pip freeze > temp_requirements.txt \
+uv add $(cat temp_requirements.txt | tr '\n' ' ') \
 cd ..
 ```
 

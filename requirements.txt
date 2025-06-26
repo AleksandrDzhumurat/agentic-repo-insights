@@ -19,4 +19,5 @@ openai==1.30.0
 anthropic==0.26.0
 jupyter
 pandas==2.3.0
-google-generativeai==0.8.5
+google-genai==0.8.5
+backoff
