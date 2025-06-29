@@ -35,6 +35,11 @@ def load_text(file_path):
     print(f'Loaded from {file_path}')
     return res
 
+def saved_text(text_input, file_path):
+    with open(file_path, "w") as file:
+        file.write(text_input)
+    print(f'Dumped to {file_path}')
+
 def eval_hash(seed_phrase, length: int = None) -> str:
     res = str(hashlib.md5(seed_phrase.encode('utf-8')).hexdigest())[:length]
     return res

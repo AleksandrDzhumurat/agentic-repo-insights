@@ -1,4 +1,6 @@
 CURRENT_DIR = $(shell pwd)
+include .env
+export
 
 
 prepare-dirs:
@@ -41,3 +43,9 @@ run-jupyter:
 	DATA_DIR=${CURRENT_DIR}/data \
 	PYTHONPATH=${CURRENT_DIR}/src \
 	jupyter notebook jupyter_notebooks --ip 0.0.0.0 --port 8889 --NotebookApp.token='' --NotebookApp.password='' --allow-root --no-browser 
+
+run-codex:
+	codex --approval-mode full-auto -m o4-mini  "`cat agentic_prompts/prompt.txt`"
+
+run-claude:
+	claude --dangerously-skip-permissions "`cat agentic_prompts/prompt.txt`"
